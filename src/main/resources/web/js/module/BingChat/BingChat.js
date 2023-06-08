@@ -1,5 +1,6 @@
-import nBGGFetch from "../aToos/nBGGFetch.js";
+import nBGGFetch from "../nBGGFetch.js";
 import BingChating from "./BingChating.js";
+import CookieID from "../CookieID.js";
 
 export default class BingChat{
     bingChating;
@@ -10,6 +11,8 @@ export default class BingChat{
     constructor(chatFirstMessages, chatOptionsSets) {
         this.chatFirstMessages = chatFirstMessages;
         this.chatOptionsSets = chatOptionsSets;
+
+
     }
 
     /**
@@ -21,7 +24,7 @@ export default class BingChat{
 
     /**
      * 是否已经开始聊天
-     * @return boolean
+     * @return {boolean}
      * */
     isStart(){
         return !!this.bingChating;
@@ -29,21 +32,23 @@ export default class BingChat{
 
     /**
      * 发送消息
-     * @param text 消息文本
-     * @param onMessage 当bing回复时的回调函数
-     * @return ReturnMessage
+     * @param text {String} 消息文本
+     * @param onMessage {function} 当bing回复时的回调函数
+     * @return {ReturnMessage}
      * */
     sendMessage(text, onMessage){
         if (!this.isStart()){
             throw new Error("聊天没有开始，需要先使用start方法开始聊天");
         }
-        return this.bingChating.sendMessage(text, onMessage);
+        return this.bingChating.sendMessage(text, (message,returnMessage)=>{
+            onMessage(message,returnMessage);
+        });
     }
 
     /**
      开始聊天
-     @param theChatType 聊天选项 默认平衡
-     @return BingChat
+     @param theChatType {"Creative","Balanced","Precise"} 聊天选项 默认平衡
+     @return {BingChat}
      @throws Error
      */
     async start(theChatType) {
@@ -52,18 +57,15 @@ export default class BingChat{
         }
         let res
         try {
-            res = await nBGGFetch(`${window.location.origin}/turing/conversation/create`);
+            res = await nBGGFetch(`${window.location.origin}/turing/conversation/create`,
+                !CookieID.cookieID?undefined:{headers:{"cookieID":CookieID.cookieID}});
         } catch (e) {
             console.warn(e);
             throw e.isNewBingGoGoError?e:new Error("无法连接到web服务器，请刷新页面重试:" + e.message);
         }
         let cookieID = res.headers.get("cookieID");
         if (res.status === 404) {
-            if(cookieID === 'self'){
-                throw new Error(`当前魔法链接服务所在地区不提供NewBing服务,请切换其他魔法链接服务。`);
-            }else {
-                throw new Error(`服务所在地区不提供NewBing服务，请联系服务搭建者切换服务所在地区，第${cookieID}个账号。`);
-            }
+            throw new Error(`服务所在地区不提供NewBing服务，请联系服务搭建者切换服务所在地区，第${cookieID}个账号。`);
         }
         let rText = await res.text();
         if(rText.length<1){
@@ -91,10 +93,10 @@ export default class BingChat{
             }
             let error = new Error(mess);
             error.type = type;
-            error.cookieID = cookieID;
             throw error;
         }
-        this.bingChating = BingChating.create(this,resjson.conversationId, resjson.clientId, resjson.conversationSignature, theChatType);
+        this.bingChating = BingChating.create(this,resjson.conversationId, resjson.clientId, resjson.conversationSignature, theChatType,undefined);
+        CookieID.cookieID = cookieID;
         return this;
     }
 

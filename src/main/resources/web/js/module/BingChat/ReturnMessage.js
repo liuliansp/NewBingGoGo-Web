@@ -2,12 +2,18 @@
  * 处理返回消息的类
  * */
 export default class ReturnMessage {
+    closed = false;
+    catWebSocket;
+    onMessage;
+    bingChating;
     //(WebSocket,function:可以不传)
     /**
-     * @param catWebSocket 聊天的ebSocket
-     * @param lisin 回调函数
+     * @param catWebSocket {WebSocket} 聊天的ebSocket
+     * @param lisin {function(Object,ReturnMessage)} 回调函数
+     * @param bingChating {BingChating}
      */
-    constructor(catWebSocket, lisin) {
+    constructor(catWebSocket, lisin,bingChating) {
+        this.bingChating = bingChating;
         this.catWebSocket = catWebSocket;
         this.onMessage = [(v) => {
             console.log(v)
@@ -33,13 +39,14 @@ export default class ReturnMessage {
                 }
             }
         }
-        catWebSocket.onclose = () => {
+        catWebSocket.onclose = (event) => {
             for (let i in this.onMessage) {
                 if ((typeof this.onMessage[i]) == 'function') {
                     try {
                         this.onMessage[i]({
                             type: 'close',
-                            mess: '连接关闭'
+                            ok:this.closed,
+                            mess: event.reason
                         }, this);
                     } catch (e) {
                         console.warn(e)
@@ -54,7 +61,7 @@ export default class ReturnMessage {
                     try {
                         this.onMessage[i]({
                             type: 'error',
-                            mess: mess
+                            mess: mess.message?mess.message:"异常中断"
                         }, this);
                     } catch (e) {
                         console.warn(e)
@@ -63,18 +70,31 @@ export default class ReturnMessage {
             }
         }
     }
-    /**
-     * 获取当前WebSocket
-     * @return WebSocket
-     */
-    getCatWebSocket() {
-        return this.catWebSocket;
-    }
+
     /**
      * 注册接收消息的监听器
-     * @param theFun 回调函数
+     * @param theFun {function(message)} 回调函数
      */
     regOnMessage(theFun) {
         this.onMessage[this.onMessage.length] = theFun;
+    }
+    /**
+     * 取消注册接收消息监听器
+     * */
+    outOnMessage(theFun){
+        for (let i = 0; i < this.onMessage.length; i++) {
+            if (this.onMessage[i] === theFun) {
+                this.onMessage.splice(i,1);
+                return;
+            }
+        }
+    }
+
+    /**
+     * 关闭当前聊天
+     * */
+    close(){
+        this.closed = true;
+        this.catWebSocket.close(1000,'ok');
     }
 }

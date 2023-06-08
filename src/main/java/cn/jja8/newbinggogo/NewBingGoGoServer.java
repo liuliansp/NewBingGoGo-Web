@@ -11,6 +11,7 @@ import java.net.ProtocolException;
 import java.net.URL;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -25,9 +26,9 @@ public class NewBingGoGoServer extends NanoWSD {
         //加载配置文件
         new YamlConfig()
                 .load(new File("Cookies.yml"))
-                .as(Cookies.class)
+                .as(Config.class)
                 .save(new File("Cookies.yml"));
-
+        WebWork.init();
         //启动
         try{
             int porint = Integer.parseInt(args[0]);
@@ -45,9 +46,32 @@ public class NewBingGoGoServer extends NanoWSD {
     public Response serveHttp(IHTTPSession session) {
         String ip = new Date()+":"+getIp(session);
         String url = session.getUri();
+
+        if(url.equals("/challenge")){//过cf验证的接口
+            System.out.println(ip+":请求通过验证");
+            List<String> pars = session.getParameters().get("redirect");
+            if(pars!=null&&pars.size()>0){
+                return redirectTo(pars.get(0));
+            }
+            return NanoHTTPD.newFixedLengthResponse(Response.Status.OK,"text/html","验证成功");
+        }
         if(url.equals("/turing/conversation/create")){//创建聊天
             System.out.println(ip+":请求创建聊天");
-            return goUrl(session,"https://www.bing.com/turing/conversation/create");
+            return goUrl(session,"https://www.bing.com/turing/conversation/create",Map.of(
+                    "referer","https://www.bing.com/search?q=Bing+AI"
+            ));
+        }
+        if(url.equals("/edgesvc/turing/captcha/create")){//请求验证码图片
+            System.out.println(ip+":请求验证码图片");
+            return goUrl(session,"https://edgeservices.bing.com/edgesvc/turing/captcha/create",Map.of(
+                    "referer","https://edgeservices.bing.com/edgesvc/chat?udsframed=1&form=SHORUN&clientscopes=chat,noheader,channelstable,&shellsig=709707142d65bbf48ac1671757ee0fd1996e2943&setlang=zh-CN&lightschemeovr=1"
+            ));
+        }
+        if(url.equals("/edgesvc/turing/captcha/verify")){//提交验证码
+            System.out.println(ip+":提交验证码");
+            return goUrl(session,"https://edgeservices.bing.com/edgesvc/turing/captcha/verify?"+session.getQueryParameterString(),Map.of(
+                    "referer","https://edgeservices.bing.com/edgesvc/chat?udsframed=1&form=SHORUN&clientscopes=chat,noheader,channelstable,&shellsig=709707142d65bbf48ac1671757ee0fd1996e2943&setlang=zh-CN&lightschemeovr=1"
+            ));
         }
         if(url.equals("/msrewards/api/v1/enroll")){//加入候补
             System.out.println(ip+":请求加入候补");
@@ -55,10 +79,9 @@ public class NewBingGoGoServer extends NanoWSD {
         }
         if(url.equals("/images/create")){
             System.out.println(ip+":请求AI画图");
-            HashMap<String,String> he = new HashMap<>();
-            he.put("sec-fetch-site","same-origin");
-            he.put("referer","https://www.bing.com/search?q=bingAI");
-            Response re =  goUrl(session,"https://www.bing.com/images/create?"+session.getQueryParameterString(),he);
+            Response re =  goUrl(session,"https://www.bing.com/images/create?"+session.getQueryParameterString(),Map.of(
+                    "referer","https://www.bing.com/search?q=bingAI"
+            ));
             re.setMimeType("text/html");
             return re;
         }
@@ -67,22 +90,19 @@ public class NewBingGoGoServer extends NanoWSD {
             String gogoUrl = url.replace("/images/create/async/results","https://www.bing.com/images/create/async/results");
             gogoUrl = gogoUrl+"?"+session.getQueryParameterString();
  //           /641f0e9c318346378e94e495ab61a703?q=a+dog&partner=sydney&showselective=1
-            HashMap<String,String> he = new HashMap<>();
-            he.put("sec-fetch-site","same-origin");
-            he.put("referer","https://www.bing.com/images/create?partner=sydney&showselective=1&sude=1&kseed=7000");
-            return goUrl(session, gogoUrl,he);
+            return goUrl(session, gogoUrl,Map.of(
+                    "referer","https://www.bing.com/images/create?partner=sydney&showselective=1&sude=1&kseed=7000"
+            ));
         }
 
         if(url.startsWith("/rp")){
             System.out.println(ip+":请求AI画图错误图片");
             String gogoUrl = url.replace("/rp","https://www.bing.com/rp");
             gogoUrl = gogoUrl+"?"+session.getQueryParameterString();
-            HashMap<String,String> he = new HashMap<>();
-            he.put("sec-fetch-site","same-origin");
-            he.put("referer","https://www.bing.com/search?q=bingAI");
-            return goUrl(session, gogoUrl,he);
+            return goUrl(session, gogoUrl,Map.of(
+                    "referer","https://www.bing.com/search?q=bingAI"
+            ));
         }
-
 
         //用于测试
         if(url.startsWith("/test/")){
@@ -91,6 +111,15 @@ public class NewBingGoGoServer extends NanoWSD {
         }
         //返回页面
         if(url.startsWith("/web/")||url.equals("/favicon.ico")){
+            if (!Config.joinStats) {
+                if(url.equals("/web/js/other/stats.js")){
+                    return NanoHTTPD.newFixedLengthResponse(
+                            Response.Status.OK,
+                            "application/x-javascript; charset=utf-8",
+                            "console.log(\"未加入统计\");"
+                    );
+                }
+            }
             return WebWork.getFile(url);
         }
         return redirectTo("/web/NewBingGoGo.html");
@@ -102,7 +131,27 @@ public class NewBingGoGoServer extends NanoWSD {
         String url = handshake.getUri();
         if(url.equals("/sydney/ChatHub")){
             System.out.println(ip+":创建魔法聊天连接");
-            return new NewBingGoGoServerWebSocket(handshake,scheduledExecutorService);
+            Map<String,String> httpHeaders = new HashMap<>();
+            String[] b = {"Accept-Language","Accept-Encoding"};//保留请求头
+            Map<String, String> header = handshake.getHeaders();
+            for (String s : b) {
+                String v = header.get(s.toLowerCase());
+                httpHeaders.put(s,v);
+            }
+            httpHeaders.put("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.57");
+            httpHeaders.put("Host","sydney.bing.com");
+            httpHeaders.put("Origin","https://www.bing.com");
+            List<String> ls = handshake.getParameters().get("randomAddress");
+            String add = null;
+            if(ls!=null){
+                if(ls.size()>0){
+                    add = ls.get(0);
+                }
+            }
+            if(add!=null){
+                httpHeaders.put("X-forwarded-for",add);
+            }
+            return new NewBingGoGoServerWebSocket(handshake,httpHeaders,scheduledExecutorService);
         }
         return getReturnErrorWebSocket(handshake,"请求接口错误！");
     }
@@ -165,11 +214,14 @@ public class NewBingGoGoServer extends NanoWSD {
 
         //拷贝头信息
         Map<String,String> header = session.getHeaders();
-        String[] b = {"user-agent","accept","accept-language"};
+        String[] b = {"accept", "accept-language","accept-encoding"};
         for (String s : b) {
-            String v = header.get(s);
+            String v = header.get(s.toLowerCase());
             urlConnection.addRequestProperty(s,v);
         }
+
+        urlConnection.addRequestProperty("user-agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.57");
+
         //添加指定的头部信息
         addHeaders.forEach(urlConnection::addRequestProperty);
 
@@ -177,22 +229,22 @@ public class NewBingGoGoServer extends NanoWSD {
         //如果是NewBingGoGoWeb版本
         if(header.get("newbinggogoweb")!=null){
             //添加配置的随机cookie
-            if(Cookies.cookies.length == 0){
+            if(Config.cookies.length == 0){
                 return getReturnError("没有任何可用cookie，请前往Cookies.yml添加cookie");
             }
-            cookieID  = (int) (Math.random()*Cookies.cookies.length);;
+            cookieID  = (int) (Math.random()* Config.cookies.length);;
             String cookieIDString = header.get("cookieid");
             if(cookieIDString!=null){
                 try{
                     cookieID = Integer.parseInt(cookieIDString);
-                    if (cookieID<0||cookieID>Cookies.cookies.length){
-                        return getReturnError("cookieID不存在，请刷新页面测试！");
+                    if (cookieID<0||cookieID>= Config.cookies.length){
+                        return getReturnError("cookieID '"+cookieID+"' 不存在，请刷新cookieID！<a href=\"?\">点击刷新</a>");
                     }
                 }catch (NumberFormatException e){
-                    return getReturnError("cookieID错误，请刷新页面测试！",e,false);
+                    return getReturnError("cookieID错误，请刷新cookieID！<a href=\"?\">点击刷新</a>",e,false);
                 }
             }
-            String cookie = Cookies.cookies[cookieID];
+            String cookie = Config.cookies[cookieID];
             System.out.println("web版使用第"+cookieID+"个"+cookie);
             urlConnection.addRequestProperty("cookie",cookie);
         }else {//如果不是
@@ -200,12 +252,13 @@ public class NewBingGoGoServer extends NanoWSD {
             urlConnection.addRequestProperty("cookie",header.get("cookie"));
         }
 
-
+        //客户端指定的随机地址
+        String randomAddress = header.get("randomaddress");
+        if(randomAddress==null){
+            randomAddress = "12.24.144.227";
+        }
         //添加X-forwarded-for
-        urlConnection.addRequestProperty(
-                "X-forwarded-for",
-                getRndInteger(3,5)+"."+getRndInteger(1,255)+"."+getRndInteger(1,255)+"."+getRndInteger(1,255)
-        );
+        urlConnection.addRequestProperty("x-forwarded-for", randomAddress);
 
         //建立链接
         try {
@@ -224,6 +277,8 @@ public class NewBingGoGoServer extends NanoWSD {
             urlConnection.disconnect();
             return getReturnError("此魔法链接服务器请求被bing拒绝！请稍后再试。错误代码:"+code,null,false);
         }
+
+        Map<String, java.util.List<String>> responseHeader = urlConnection.getHeaderFields();
 
         //将数据全部读取然后关闭流和链接
         int len = urlConnection.getContentLength();
@@ -250,13 +305,19 @@ public class NewBingGoGoServer extends NanoWSD {
                 byteArrayInputStream,
                 len
         );
+        //保留返回头
+        responseHeader.forEach((s, strings) -> {
+            if(s!=null
+                    && !s.equals("Content-Length")
+                    && !s.equals("Content-Type")
+            ){
+                for (String string : strings) {
+                    response.addHeader(s, string);
+                }
+            }
+        });
         response.addHeader("cookieID", String.valueOf(cookieID));
         return response;
-    }
-
-    //生成随机数
-    public static int getRndInteger(int min, int max) {
-        return (((int)(Math.random() * (max-min))) + min);
     }
 
     public static WebSocket getReturnErrorWebSocket(IHTTPSession session,String error){

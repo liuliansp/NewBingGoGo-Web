@@ -6,15 +6,32 @@
     <title id="docTitle">NewBingGoGo:聊天啦啦啦啦</title>
     <link rel="stylesheet" href="./css/github-markdown-css.css">
     <link rel="stylesheet" href="./css/katex.min.css">
+    <link rel="stylesheet" href="./css/highlight.js.default.min.css">
     <link rel="stylesheet" href="./css/bing.css">
     <script src="./js/other/marked.min.js"></script>
     <script src="./js/other/katex.min.js"></script>
     <script src="./js/other/auto-render.min.js"></script>
+    <script src="./js/other/highlight.min.js"></script>
     <script src="./js/NewBingGoGo.js" type="module"></script>
-    <script src="js/other/stats.js" async></script>
+    <script src="./js/other/stats.js" async="async"></script>
 </head>
 
 <body class="b">
+
+<!--加载动画-->
+<div id="load">
+    <div class="mesh-loader">
+        <div class="set-one">
+            <div class="circle"></div>
+            <div class="circle"></div>
+        </div>
+        <div class="set-two">
+            <div class="circle"></div>
+            <div class="circle"></div>
+        </div>
+    </div>
+</div>
+
 <div id="background"></div>
 <div id="head">
     <div id='head-img-div'>
@@ -67,8 +84,9 @@
 <div id="body">
     <div id="body-top"></div>
     <div style="text-align: center;">
-        <h1>NewBingGoGo</h1>
-        <h2>简单的开始和NewBing聊天</h2>
+        <h1 id="server-h1">NewBingGoGo</h1>
+        <h2 id="server-h2">简单开始和NewBing聊天</h2>
+        <p  id="server-p"></p>
     </div>
     <div id="chatTypeDiv" style="opacity: 1;">
         <div class="chatTypeChose" id="chatTypeChoseCreate">

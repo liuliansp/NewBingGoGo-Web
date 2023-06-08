@@ -3,23 +3,58 @@ import TitleWorker from './module/TitleWorker.js'
 import BingChat from './module/BingChat/BingChat.js';
 import ChatFirstMessages from "./module/BingChat/ChatFirstMessages.js";
 import ChatOptionsSets_Write from "./module/BingChat/ChatOptionsSets_Write.js";
+import {LoadAnimation} from "./module/aToos/AToos.js";
 
-/*控制按钮组选择，当选中新的按钮时回调函数*/
+/**
+ * 控制按钮组选择，当选中新的按钮时回调函数
+ * @param buttonGroup {NodeListOf<HTMLElement>} 可选择元素组
+ * @param returnFun {function(HTMLElement)} 被选中回调，返回被选中的元素
+ * @return {function(HTMLElement)} buttonGroup中的其中一个，切换选中这个元素
+ * */
 function selectButtonFunRetrun(buttonGroup, returnFun) {
+    /**
+     * @param the {HTMLElement} buttonGroup中的其中一个，切换选中这个元素
+     * @return {function(HTMLElement)} buttonGroup中的其中一个，切换选中这个元素
+     * */
+    let selectThe = (the)=>{
+        if(!the){
+            return selectThe;
+        }
+        for (let j = 0; j < buttonGroup.length; j++) {
+            buttonGroup[j].classList.remove("selected");
+        }
+        the.classList.add("selected");
+        returnFun(the);
+        return selectThe;
+    }
     for (let i = 0; i < buttonGroup.length; i++) {
         let the = buttonGroup[i];
         the.onclick = () => {
-            for (let j = 0; j < buttonGroup.length; j++) {
-                buttonGroup[j].classList.remove("selected");
-            }
-            the.classList.add("selected");
-            returnFun(the);
+            selectThe(the);
         };
     }
+    return selectThe;
+}
+
+/**
+ * 查找包含指定值的按钮
+ * @param buttonGroup {NodeListOf<HTMLElement>} 可选择元素组
+ * @param value 值
+ * */
+function findButton(buttonGroup,value){
+    if(!value){
+        return undefined;
+    }
+    for (let buttonGroupElement of buttonGroup) {
+        if(buttonGroupElement.dataset.value===value){
+            return buttonGroupElement;
+        }
+    }
+    return undefined;
 }
 
 //页面加载完成之后执行
-window.addEventListener('load',()=>{
+window.addEventListener('load',async ()=>{
 
     const chatOptionsSets_Write = new ChatOptionsSets_Write();
     const chatFirstMessages = new ChatFirstMessages();
@@ -60,22 +95,20 @@ window.addEventListener('load',()=>{
     let toneSelectbuttns = document.querySelectorAll("#toneSelect>div");
     let formatSelecctbuttns = document.querySelectorAll("#formatSelecct>div");
     let lengthSelectbuttns = document.querySelectorAll("#lengthSelect>div");
+    let url = new URL(window.location.href);
     // 将按钮组添加
-    chatOptionsSets_Write.tone = toneSelectbuttns[0].dataset.value;
-    toneSelectbuttns[0].classList.add('selected');
     selectButtonFunRetrun(toneSelectbuttns, (re) => {
         chatOptionsSets_Write.tone = re.dataset.value;
-    });
-    chatOptionsSets_Write.format = formatSelecctbuttns[0].dataset.value;
-    formatSelecctbuttns[0].classList.add('selected');
+    })(toneSelectbuttns[0])(findButton(toneSelectbuttns,url.searchParams.get("tone")));
+
     selectButtonFunRetrun(formatSelecctbuttns, (re) => {
         chatOptionsSets_Write.format = re.dataset.value;
-    });
-    chatOptionsSets_Write.length = lengthSelectbuttns[0].dataset.value;
-    lengthSelectbuttns[0].classList.add('selected');
+    })(formatSelecctbuttns[0])(findButton(formatSelecctbuttns,url.searchParams.get("format")));
+
     selectButtonFunRetrun(lengthSelectbuttns, (re) => {
         chatOptionsSets_Write.length = re.dataset.value;
-    });
+    })(lengthSelectbuttns[0])(findButton(lengthSelectbuttns,url.searchParams.get("length")));
+
 
 
     const input_text = document.getElementById('input');
@@ -83,36 +116,9 @@ window.addEventListener('load',()=>{
 
 
     //定义需要用到的变量
-    let onMessageIsOKClose = false;//消息是否正常接收完毕
     let returnMessage; //聊天返回对象
     let isSpeaking = false; //是否正在接收消息
 
-
-
-    function onMessage(json, returnMessage) {
-        if (json.type === "close") {
-            isSpeakingFinish();
-            if (!onMessageIsOKClose) {
-                parserReturnMessage.addError("聊天异常中断了！可能是网络问题。");
-            }
-            return;
-        }
-        if (json.type === 'error') {
-            parserReturnMessage.addError("连接发生错误：" + json.mess);
-            return;
-        }
-        onMessageIsOKClose = false
-        if (json.type === 3) {
-            onMessageIsOKClose = true;
-            returnMessage.getCatWebSocket().close(1000, 'ok');
-        } else if (json.type === 1) {
-            parserReturnMessage.porserArguments(json.arguments);
-        } else if (json.type === 2) {
-            parserReturnMessage.porserType2Item(json.item);
-        } else {
-            console.log(JSON.stringify(json));
-        }
-    }
 
     /**重置聊天框和聊天建议到初始状态 */
     async function reSetStartChatMessage() {
@@ -155,16 +161,28 @@ window.addEventListener('load',()=>{
         if (!bingChat.isStart()) {
             isAskingToMagic();
             try {
-                await bingChat.start('balance');
+                await bingChat.start('Balanced');
             }catch (error){
                 console.warn(error);
                 parserReturnMessage.addError(error.message);
                 isSpeakingFinish();
-                if(error.cookieID==='self'){
+                if(window.location.protocol==="chrome-extension:"){
                     if(error.type==='NoLogin'){
                         parserReturnMessage.addNoLogin();
                     }else if (error.type==='NoPower'){
                         parserReturnMessage.addNoPower();
+                    }else if(error.theType === "cf-mitigated"){
+                        let reUrl = error.theData;
+                        if(reUrl){
+                            let rUrl = new URL(reUrl);
+                            let myUrl = new URL(location.href);
+                            myUrl.searchParams.set("tone",chatOptionsSets_Write.tone);
+                            myUrl.searchParams.set("format",chatOptionsSets_Write.format);
+                            myUrl.searchParams.set("length",chatOptionsSets_Write.length);
+                            myUrl.searchParams.set("sendMessage",text);
+                            rUrl.searchParams.set("redirect",myUrl.toString());
+                            window.location.href = rUrl.toString();
+                        }
                     }
                 }
                 return;
@@ -172,7 +190,11 @@ window.addEventListener('load',()=>{
         }
         try {
             isSpeakingStart();
-            returnMessage = await bingChat.sendMessage(text, onMessage);
+            returnMessage = await bingChat.sendMessage(text, parserReturnMessage.getOnMessageFun((even)=>{
+                if (even.type==='close'||even.type==='close-accident'||even.type==='error') {
+                    isSpeakingFinish();
+                }
+            }));
             isSpeakingStart(text);
         }catch (error){
             console.warn(error);
@@ -182,7 +204,7 @@ window.addEventListener('load',()=>{
     }
 
 
-    send_button.onclick = async ()=>{
+    let sendOnclick = async ()=>{
         if (isSpeaking) {
             return;
         }
@@ -199,10 +221,22 @@ window.addEventListener('load',()=>{
         //发送
         send(text).then();
     };
+    send_button.onclick = sendOnclick;
 
 
+    LoadAnimation.loaded(document.getElementById('load'));
 
-    reSetStartChatMessage().then();
+    await reSetStartChatMessage();
+
+    //如果有发送第一条消息的参数
+    let sendMessage = new URL(window.location.href).searchParams.get("sendMessage");
+    if(sendMessage){
+        input_text.value = sendMessage;
+        await sendOnclick();
+        let url = new URL(window.location.href);
+        url.searchParams.delete("sendMessage");
+        window.history.pushState('','',url.toString());
+    }
 });
 
 

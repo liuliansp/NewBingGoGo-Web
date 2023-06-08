@@ -1,11 +1,12 @@
 import nBGGFetch from "./nBGGFetch.js";
+import CookieID from "./CookieID.js";
 
 const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay))
 /**
- * @param text 生成图像的描述
- * @param requestId 请求id，如果不是对话生成图片可以为undefined
- * @param countF 回调函数，获取当前是第几次请求。
- * @return [...{img:url,mImg:url}...] img:图片url mIng:缩略图url
+ * @param text {String} 生成图像的描述
+ * @param requestId {String,undefined} 请求id，如果不是对话生成图片可以为undefined
+ * @param countF {function} 回调函数，获取当前是第几次请求。
+ * @return {[{img:String,mImg:String}]} [...{img:url,mImg:url}...] img:图片url mIng:缩略图url
  * */
 export default async function generateImages(text,requestId,countF){
     let theUrls = new URLSearchParams();
@@ -17,7 +18,8 @@ export default async function generateImages(text,requestId,countF){
     theUrls.append('q', text);
     theUrls.append('iframeid', requestId);
     let theUrl = `${window.location.origin}/images/create?${theUrls.toString()}`;
-    let response  = await nBGGFetch(theUrl);
+    let response  = await nBGGFetch(theUrl,
+        CookieID.cookieID?{headers:{"cookieID":CookieID.cookieID}}:undefined);
     let html = (await response.text());
     let cookieID = response.headers.get('cookieID');
 

@@ -9,12 +9,76 @@ import SwitchWorker from "./module/SwitchWorker.js";
 import ChatRecordWorker from "./module/ChatRecord/ChatRecordWorker.js";
 import ChatFirstMessages from "./module/BingChat/ChatFirstMessages.js";
 import ChatOptionsSets from "./module/BingChat/ChatOptionsSets.js";
+import nBGGFetch from "./module/nBGGFetch.js";
+import {LoadAnimation} from "./module/aToos/AToos.js";
+
+/**
+ * 给bingChat加载服务器配置
+ * @param bingChat {BingChat} 要加载配置的BingChat
+ * @param serverConfig {Object} 配置的json
+ */
+function bingChatLoadServerConfig(bingChat,serverConfig){
+    if(serverConfig){
+        let firstMessages = serverConfig["firstMessages"];
+        if( Array.isArray(firstMessages) && firstMessages.length>0  ){
+            bingChat.chatFirstMessages.bingmMessages = firstMessages;
+        }
+        let firstProposes = serverConfig["firstProposes"];
+        if(Array.isArray(firstProposes) && firstProposes.length>0){
+            bingChat.chatFirstMessages.bingProposes = firstProposes;
+        }
+    }
+}
+
+/**
+ * 给dom元素加载服务器配置
+ * @param h1 {HTMLElement}
+ * @param h2 {HTMLElement}
+ * @param p {HTMLElement}
+ * @param serverConfig {Object}
+ */
+function domLoadServerConfig(h1,h2,p,serverConfig){
+    if (!serverConfig){
+        return;
+    }
+    function hasShow(element,text){
+        if(element){
+            if (text){
+                element.innerText = text;
+                element.style.opacity = '1';
+            }else {
+                element.style.opacity = '0';
+            }
+        }
+    }
+    hasShow(h1,serverConfig['h1']);
+    hasShow(h2,serverConfig['h2']);
+    hasShow(p,serverConfig['p']);
+}
 
 //页面加载完成之后执行
-window.addEventListener('load',()=>{
+window.addEventListener('load',async ()=>{
     //窗口更新滚动
     new WindowScrollingWorker(document.getElementById('chat'));
+
+    //加载服务器配置
+    let serverConfig
+    try{
+        serverConfig = (await (await nBGGFetch("./resource/config.json")).json());
+    }catch (error){
+        console.warn(error);
+    }
+    domLoadServerConfig(
+        document.getElementById("server-h1"),
+        document.getElementById("server-h2"),
+        document.getElementById("server-p"),
+        serverConfig
+    )
+
     const bingChat = new BingChat(new ChatFirstMessages(),new ChatOptionsSets()); //聊天对象 BingChat 对象
+    bingChatLoadServerConfig(bingChat,serverConfig);
+
+
     //加载需要用到的对象
     const chatSuggestionsManager = new ChatSuggestionsWorker(
         document.getElementById('SearchSuggestions')//聊天建议dom
@@ -74,7 +138,6 @@ window.addEventListener('load',()=>{
 
 
     //定义需要用到的变量
-    let onMessageIsOKClose = false;//消息是否正常接收完毕
     let returnMessage; //聊天返回对象
     let isSpeaking = false; //是否正在接收消息
     let previewMessageID = undefined; //预览消息id，如果没有预览消息就undefined
@@ -87,9 +150,8 @@ window.addEventListener('load',()=>{
             alert("请等待本次对话结束。")
             return;
         }
-        onMessageIsOKClose = true;
         if (returnMessage) {
-            returnMessage.getCatWebSocket().close(1000, 'ok');
+            returnMessage.close();
             returnMessage = undefined;
         }
     }
@@ -110,37 +172,6 @@ window.addEventListener('load',()=>{
             input_text.value += "\n";
         }
     });
-
-
-    function onMessage(json, returnMessage) {
-        if (json.type === "close") {
-            isSpeakingFinish();
-            if (!onMessageIsOKClose) {
-                parserReturnMessage.addError("聊天异常中断了！可能是网络问题。");
-            }
-
-            //保存聊天记录
-            if(chatRecordWorker.isOpen()){
-                chatRecordWorker.save();
-            }
-            return;
-        }
-        if (json.type === 'error') {
-            parserReturnMessage.addError("连接发生错误：" + json.mess);
-            return;
-        }
-        onMessageIsOKClose = false
-        if (json.type === 3) {
-            onMessageIsOKClose = true;
-            returnMessage.getCatWebSocket().close(1000, 'ok');
-        } else if (json.type === 1) {
-            parserReturnMessage.porserArguments(json.arguments);
-        } else if (json.type === 2) {
-            parserReturnMessage.porserType2Item(json.item);
-        } else {
-            console.log(JSON.stringify(json));
-        }
-    }
 
     /**重置聊天框和聊天建议到初始状态 */
     async function reSetStartChatMessage() {
@@ -202,11 +233,21 @@ window.addEventListener('load',()=>{
                 console.warn(error);
                 parserReturnMessage.addError(error.message);
                 isSpeakingFinish();
-                if(error.cookieID==='self'){
+                if(window.location.protocol==="chrome-extension:"){
                     if(error.type==='NoLogin'){
                         parserReturnMessage.addNoLogin();
                     }else if (error.type==='NoPower'){
                         parserReturnMessage.addNoPower();
+                    }else if(error.theType === "cf-mitigated"){
+                        let reUrl = error.theData;
+                        if(reUrl){
+                            let rUrl = new URL(reUrl);
+                            let myUrl = new URL(location.href);
+                            myUrl.searchParams.set("ChatMode",chatModeSwitchingManager.chatType);
+                            myUrl.searchParams.set("sendMessage",text);
+                            rUrl.searchParams.set("redirect",myUrl.toString());
+                            window.location.href = rUrl.toString();
+                        }
                     }
                 }
                 return;
@@ -214,7 +255,15 @@ window.addEventListener('load',()=>{
         }
         try {
             isSpeakingStart();
-            returnMessage = await bingChat.sendMessage(text, onMessage);
+            returnMessage = await bingChat.sendMessage(text, parserReturnMessage.getOnMessageFun((even)=>{
+                if (even.type==='close'||even.type==='close-accident'||even.type==='error') {
+                    isSpeakingFinish();
+                    //保存聊天记录
+                    if(chatRecordWorker.isOpen()){
+                        chatRecordWorker.save();
+                    }
+                }
+            }));
             isSpeakingStart(text);
         }catch (error){
             console.warn(error);
@@ -279,9 +328,8 @@ window.addEventListener('load',()=>{
 
     //开始新主题
     restart_button.onclick = () => {
-        onMessageIsOKClose = true;
         if (returnMessage) {
-            returnMessage.getCatWebSocket().close(1000, 'ok');
+            returnMessage.close();
             returnMessage = undefined;
         }
         bingChat.end();
@@ -308,9 +356,21 @@ window.addEventListener('load',()=>{
 
 
 
-    reSetStartChatMessage().then();
+
     input_update_input_text_sstyle_show_update();
     cueWordManager.loadcueWorld().then();
+    LoadAnimation.loaded(document.getElementById('load'));
+
+
+    await reSetStartChatMessage();
+    //如果有发送第一条消息的参数
+    let url = new URL(window.location.href);
+    let sendMessage = url.searchParams.get("sendMessage");
+    if(sendMessage){
+        send(sendMessage).then()
+        url.searchParams.delete("sendMessage");
+        window.history.pushState('','',url.toString());
+    }
 });
 
 
